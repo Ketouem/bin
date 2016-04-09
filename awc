@@ -1,0 +1,83 @@
+#!/usr/bin/env python
+
+import boto3
+import os
+import re
+import simplejson as json
+import sys
+import time
+from tabulate import tabulate
+
+
+def print_table(rows, headers=""):
+    os.system("clear")
+    date = os.popen("date +'%d-%m-%yy %H:%M:%S'").readline()
+    print date
+    print tabulate(rows, headers)
+
+def ec2list(interval=0):
+    """ List EC2 instances in a table format"""
+    def printlist():
+        client = boto3.client("ec2")
+        data = client.describe_instances()
+        #data = json.load(open("instancelist"))
+        list_instances = []
+        list_table = []
+        for reservation in data["Reservations"]:
+            list_instances.extend(reservation["Instances"])
+        for instance in list_instances:
+            list_instance = []
+            if "Tags" in instance:
+                for tag in instance["Tags"]:
+                    if tag["Key"] == "Name": 
+                        list_instance = [ tag["Value"] ]
+            if not list_instance:
+                list_instance = []
+            list_instance.append(instance["InstanceId"])	
+            list_instance.append(instance["ImageId"])	
+            list_instance.append(instance["State"]["Name"])	
+            list_instance.append(instance["InstanceType"])	
+            try:
+                list_instance.append(instance["PrivateIpAddress"])	
+            except:
+                list_instance.append("")
+            try:
+                list_instance.append(instance["PublicDnsName"])
+            except:
+                list_instance.append("")
+            list_table.append(list_instance)
+        print_table(list_table, [ "Name", "ID", "Image", "State", "Type", "Private IP", "Public IP"])
+    if interval:
+        interval=int(interval)
+        while True:
+            printlist()
+            time.sleep(interval)
+    else:
+        printlist()
+
+def update_sg_external_ip(sg="sg_external_ssh"):
+    """Add my Ip to be able to ssh"""
+    ip = os.popen("/usr/bin/curl ifconfig.co 2>/dev/null").readline().strip()
+    print "My Public IP is : "+ip
+    client = boto3.client("ec2")
+    ippermissions =  client.describe_security_groups(GroupNames = [ sg ])["SecurityGroups"][0]["IpPermissions"]
+    print "Revoking old IP from group "+sg
+    client.revoke_security_group_ingress(GroupName = sg, IpPermissions = ippermissions)
+    print "Adding new IP to group "+sg
+    client.authorize_security_group_ingress(GroupName=sg, IpProtocol="tcp", FromPort=22, ToPort=443, CidrIp=ip+"/32")
+    
+def main(list_args):
+    dict_method = { "ec2":  "ec2list", "set": "set_profile", "sgup": "update_sg_external_ip" }
+    arg = list_args.pop(0)
+    try:
+        funcname = dict_method[arg]
+    except:
+        print "Unknown action "+arg
+        sys.exit(1)
+    try:
+        globals()[funcname](*list_args)
+    except:
+        globals()[funcname]()
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
