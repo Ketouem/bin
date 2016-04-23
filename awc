@@ -8,19 +8,17 @@ import sys
 import time
 from tabulate import tabulate
 
-
 def print_table(rows, headers=""):
     os.system("clear")
-    date = os.popen("date +'%d-%m-%yy %H:%M:%S'").readline()
+    date = os.popen("date +'%d-%m-%y %H:%M:%S'").readline()
     print date
     print tabulate(rows, headers)
 
-def ec2list(interval=0):
+def ec2list(interval=0, state="running"):
     """ List EC2 instances in a table format"""
     def printlist():
         client = boto3.client("ec2")
         data = client.describe_instances()
-        #data = json.load(open("instancelist"))
         list_instances = []
         list_table = []
         for reservation in data["Reservations"]:
@@ -32,7 +30,7 @@ def ec2list(interval=0):
                     if tag["Key"] == "Name": 
                         list_instance = [ tag["Value"] ]
             if not list_instance:
-                list_instance = []
+                list_instance = [""]
             list_instance.append(instance["InstanceId"])	
             list_instance.append(instance["ImageId"])	
             list_instance.append(instance["State"]["Name"])	
@@ -42,9 +40,12 @@ def ec2list(interval=0):
             except:
                 list_instance.append("")
             try:
-                list_instance.append(instance["PublicDnsName"])
+                list_instance.append(instance["NetworkInterfaces"][0]["Association"]["PublicIp"])
             except:
                 list_instance.append("")
+            if state:
+                if state.lower() != "all" and state.lower() != instance["State"]["Name"].lower():
+                    continue
             list_table.append(list_instance)
         print_table(list_table, [ "Name", "ID", "Image", "State", "Type", "Private IP", "Public IP"])
     if interval:
@@ -55,6 +56,41 @@ def ec2list(interval=0):
     else:
         printlist()
 
+def ec2console(instanceid, interface="public"):
+    """ List EC2 instances in a table format"""
+    # First we get instance info
+    os.system("clear")
+    date = os.popen("date +'%d-%m-%y %H:%M:%S'").readline()
+    client = boto3.client("ec2")
+    ready = False
+    old = ""
+    while not ready:
+        client = boto3.client("ec2")
+        data = client.get_console_output(InstanceId=instanceid)
+        if "Output" not  in data:
+            print "Patience you must have, young Jedi"
+        else:
+            current = data["Output"]
+            if not old:
+                print current
+                old = current
+            else:
+                if old != current:
+                    diff = re.sub(old, "", current)
+                    print diff
+            last = current.split("\n")[-2]
+            if re.match("Cloud-init.*finished.*", last):
+                print "\n\n=========\nTime for SSH\n"
+                break
+        print "Sleeping 20seconds..."
+        time.sleep(20)
+    data = client.describe_instances(InstanceIds=[instanceid])["Reservations"][0]["Instances"][0]
+    if interface == "public":
+        ip = data["NetworkInterfaces"][0]["Association"]["PublicIp"]
+    else:
+        ip = data["PrivateIpAddress"]
+    os.system("ssh "+ip)
+
 def update_sg_external_ip(sg="sg_external_ssh"):
     """Add my Ip to be able to ssh"""
     ip = os.popen("/usr/bin/curl ifconfig.co 2>/dev/null").readline().strip()
@@ -64,19 +100,25 @@ def update_sg_external_ip(sg="sg_external_ssh"):
     print "Revoking old IP from group "+sg
     client.revoke_security_group_ingress(GroupName = sg, IpPermissions = ippermissions)
     print "Adding new IP to group "+sg
-    client.authorize_security_group_ingress(GroupName=sg, IpProtocol="tcp", FromPort=22, ToPort=443, CidrIp=ip+"/32")
-    
+    client.authorize_security_group_ingress(GroupName=sg, IpProtocol="-1", FromPort=0, ToPort=0, CidrIp=ip+"/32")
+
 def main(list_args):
-    dict_method = { "ec2":  "ec2list", "set": "set_profile", "sgup": "update_sg_external_ip" }
+    dict_method = {
+        "ec2":      "ec2list",
+        "set":      "set_profile",
+        "sgup":     "update_sg_external_ip",
+        "console":  "ec2console",
+        "ssh"       :                         "ssh"
+    }
     arg = list_args.pop(0)
     try:
         funcname = dict_method[arg]
     except:
         print "Unknown action "+arg
         sys.exit(1)
-    try:
+    if list_args:
         globals()[funcname](*list_args)
-    except:
+    else:
         globals()[funcname]()
 
 if __name__ == "__main__":
