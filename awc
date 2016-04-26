@@ -64,11 +64,15 @@ def ec2console(instanceid, interface="public"):
     client = boto3.client("ec2")
     ready = False
     old = ""
+    firsttime = True
     while not ready:
         client = boto3.client("ec2")
         data = client.get_console_output(InstanceId=instanceid)
         if "Output" not  in data:
-            print "Patience you must have, young Jedi"
+            if firsttime:
+                os.system("clear")
+                os.system("cat "+os.path.dirname(os.path.realpath(__file__))+"/waitforit")
+                firsttime = False
         else:
             current = data["Output"]
             if not old:
