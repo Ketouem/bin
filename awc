@@ -14,8 +14,9 @@ def print_table(rows, headers=""):
     print date
     print tabulate(rows, headers)
 
-def ec2list(interval=0, state="running"):
+def ec2list(interval=0, filter=".*"):
     """ List EC2 instances in a table format"""
+    interval = int(interval)
     def printlist():
         client = boto3.client("ec2")
         data = client.describe_instances()
@@ -43,13 +44,12 @@ def ec2list(interval=0, state="running"):
                 list_instance.append(instance["NetworkInterfaces"][0]["Association"]["PublicIp"])
             except:
                 list_instance.append("")
-            if state:
-                if state.lower() != "all" and state.lower() != instance["State"]["Name"].lower():
-                    continue
-            list_table.append(list_instance)
+            if re.match("^.*"+filter+".*$", " ".join(list_instance)):
+                list_table.append(list_instance)
+            else:
+                print list_instance
         print_table(list_table, [ "Name", "ID", "Image", "State", "Type", "Private IP", "Public IP"])
     if interval:
-        interval=int(interval)
         while True:
             printlist()
             time.sleep(interval)
