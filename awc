@@ -14,7 +14,7 @@ def print_table(rows, headers=""):
     print date
     print tabulate(rows, headers)
 
-def ec2list(interval=0, filter=".*"):
+def ec2list(filter=".*",interval=0):
     """ List EC2 instances in a table format"""
     interval = int(interval)
     def printlist():
@@ -30,6 +30,7 @@ def ec2list(interval=0, filter=".*"):
                 for tag in instance["Tags"]:
                     if tag["Key"] == "Name": 
                         list_instance = [ tag["Value"] ]
+                        break
             if not list_instance:
                 list_instance = [""]
             list_instance.append(instance["InstanceId"])	
@@ -46,8 +47,6 @@ def ec2list(interval=0, filter=".*"):
                 list_instance.append("")
             if re.match("^.*"+filter+".*$", " ".join(list_instance)):
                 list_table.append(list_instance)
-            else:
-                print list_instance
         print_table(list_table, [ "Name", "ID", "Image", "State", "Type", "Private IP", "Public IP"])
     if interval:
         while True:
@@ -57,7 +56,7 @@ def ec2list(interval=0, filter=".*"):
         printlist()
 
 def ec2console(instanceid, interface="public"):
-    """ List EC2 instances in a table format"""
+    """ Query console output of new instance and ssh when ready"""
     # First we get instance info
     os.system("clear")
     date = os.popen("date +'%d-%m-%y %H:%M:%S'").readline()
@@ -82,18 +81,41 @@ def ec2console(instanceid, interface="public"):
                 if old != current:
                     diff = re.sub(old, "", current)
                     print diff
-            last = current.split("\n")[-2]
-            if re.match("Cloud-init.*finished.*", last):
-                print "\n\n=========\nTime for SSH\n"
-                break
-        print "Sleeping 20seconds..."
-        time.sleep(20)
+            list_lines = current.split("\n")
+            for line in list_lines:
+                if re.match(".*loud-init.*finished.*", line):
+                    print "\n\n=========\nTime for SSH\n"
+                    ready = True
+        if ready:
+            break
+        else:
+            print "Sleeping 20seconds..."
+            time.sleep(20)
     data = client.describe_instances(InstanceIds=[instanceid])["Reservations"][0]["Instances"][0]
     if interface == "public":
         ip = data["NetworkInterfaces"][0]["Association"]["PublicIp"]
     else:
         ip = data["PrivateIpAddress"]
     os.system("ssh "+ip)
+
+def quickie():
+    """Quickly spawn an instance"""
+    #info = { "instance_type": { default = "t2.micro", all = [ "t2.micro" ] }, "image_id" : { default = "", all = [] }, "security_groups" : { default = [], all = [] }, "key_name": { default = "", all = [] }}
+    client = boto3.client("EC2")
+    data = client.describe_images()
+    info["image_id"]["all"]
+    args = {}
+    for attr in info:
+        print "Available values for "+attr+":\n"+" ".join(info[attr])
+        default = info[attr][0]
+        var = raw_input("Choose "+attr+"["+default+"]:")
+        if var == "":
+            var = default
+        if re.match("^.+\s", attr): 
+            args[attr] = [var]
+        else:
+            args[attr] = args
+    reservation = client.run_instances(**args)
 
 def update_sg_external_ip(sg="sg_external_ssh"):
     """Add my Ip to be able to ssh"""
