@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<html lang="en">
+  <body>
+    {% for name in profile_names %}
+    <a href="{{ url_for('consolelogin.login', profile=name) }}">{{ name }}</a><br/>
+    {% endfor %}
+  </body>
+</html>
